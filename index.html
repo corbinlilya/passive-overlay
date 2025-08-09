@@ -1,0 +1,152 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Overlay</title>
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <style>
+    html, body {
+      width: 100vw; height: 100vh; margin: 0; overflow: hidden;
+      background: rgba(0,0,0,0.001);
+    }
+    #img {
+      width: 100vw; height: 100vh;
+      object-fit: contain;
+      pointer-events: none;
+      user-select: none;
+      transform-origin: 50% 50%;
+      transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(var(--s, 1));
+      transition: transform 100ms linear;
+      display: block;
+    }
+    /* Popup panel (only visible in Edit Mode) */
+    .panel {
+      position: fixed;
+      right: 12px; top: 12px;
+      display: none; /* toggled on in edit mode */
+      width: 260px;
+      padding: 10px;
+      border-radius: 10px;
+      background: rgba(20,20,20,0.9);
+      color: #fff;
+      font: 13px/1.2 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      backdrop-filter: blur(6px);
+      z-index: 10000;
+    }
+    .panel h4 { margin: 0 0 8px; font-size: 13px; opacity: .9; }
+    .row { display: grid; grid-template-columns: 32px 1fr 56px; gap: 8px; align-items: center; margin: 6px 0; }
+    .row label { opacity: .75; }
+    input[type="range"] { width: 100%; }
+    input[type="number"] {
+      width: 56px; padding: 4px 6px; border-radius: 6px; border: 1px solid #444;
+      background: #222; color: #fff;
+    }
+    .actions { display: flex; gap: 8px; margin-top: 8px; }
+    .btn {
+      all: unset; cursor: pointer; padding: 6px 10px; border-radius: 8px; text-align: center;
+      background: #2d6cdf; color: #fff;
+    }
+    .btn.ghost { background: #3a3a3a; }
+    .hint { margin-top: 6px; opacity: .7; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <img id="img" alt="overlay">
+
+  <!-- Edit panel -->
+  <div id="panel" class="panel" role="dialog" aria-label="Overlay Controls">
+    <h4>Overlay Controls</h4>
+
+    <div class="row">
+      <label for="x">X</label>
+      <input id="x" type="range" min="-2000" max="2000" step="1" value="0">
+      <input id="xNum" type="number" step="1" value="0">
+    </div>
+
+    <div class="row">
+      <label for="y">Y</label>
+      <input id="y" type="range" min="-2000" max="2000" step="1" value="0">
+      <input id="yNum" type="number" step="1" value="0">
+    </div>
+
+    <div class="row">
+      <label for="s">S</label>
+      <input id="s" type="range" min="0.1" max="3" step="0.01" value="1">
+      <input id="sNum" type="number" step="0.01" value="1">
+    </div>
+
+    <div class="actions">
+      <button id="center" class="btn ghost">Center</button>
+      <button id="done" class="btn">Done</button>
+    </div>
+    <div class="hint">Tip: Ctrl+Alt+E toggles Edit Mode</div>
+  </div>
+
+  <script>
+    const img = document.getElementById('img');
+    const panel = document.getElementById('panel');
+    const x = document.getElementById('x'), xNum = document.getElementById('xNum');
+    const y = document.getElementById('y'), yNum = document.getElementById('yNum');
+    const s = document.getElementById('s'), sNum = document.getElementById('sNum');
+    const done = document.getElementById('done');
+    const centerBtn = document.getElementById('center');
+
+    // State with persistence
+    const state = {
+      tx: +(localStorage.getItem('ol_tx') ?? 0),
+      ty: +(localStorage.getItem('ol_ty') ?? 0),
+      sc: +(localStorage.getItem('ol_sc') ?? 1)
+    };
+
+    function apply() {
+      document.documentElement.style.setProperty('--tx', state.tx + 'px');
+      document.documentElement.style.setProperty('--ty', state.ty + 'px');
+      document.documentElement.style.setProperty('--s', state.sc);
+      localStorage.setItem('ol_tx', state.tx);
+      localStorage.setItem('ol_ty', state.ty);
+      localStorage.setItem('ol_sc', state.sc);
+    }
+
+    function updateInputs() {
+      x.value = xNum.value = String(state.tx);
+      y.value = yNum.value = String(state.ty);
+      s.value = sNum.value = String(state.sc);
+    }
+
+    function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
+
+    // Bind inputs
+    x.addEventListener('input', () => { state.tx = +x.value; xNum.value = x.value; apply(); });
+    xNum.addEventListener('input', () => { state.tx = +xNum.value; x.value = xNum.value; apply(); });
+
+    y.addEventListener('input', () => { state.ty = +y.value; yNum.value = y.value; apply(); });
+    yNum.addEventListener('input', () => { state.ty = +yNum.value; y.value = yNum.value; apply(); });
+
+    s.addEventListener('input', () => { state.sc = +s.value; sNum.value = s.value; apply(); });
+    sNum.addEventListener('input', () => {
+      state.sc = clamp(+sNum.value || 1, +s.min, +s.max);
+      s.value = String(state.sc);
+      apply();
+    });
+
+    centerBtn.addEventListener('click', () => { state.tx = 0; state.ty = 0; apply(); updateInputs(); });
+    done.addEventListener('click', () => window.overlayAPI.setEditing(false));
+
+    // Show/hide panel on edit mode
+    window.overlayAPI.onEditing((flag) => {
+      panel.style.display = flag ? 'block' : 'none';
+    });
+
+    // Image loader (data URL from main)
+    window.overlayAPI.onImageData((dataUrl) => {
+      img.src = dataUrl;
+    });
+
+    // Init
+    updateInputs();
+    apply();
+  </script>
+</body>
+</html>
